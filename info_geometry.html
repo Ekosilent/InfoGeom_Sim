@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Information Geometry — Computational Curvature</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#070a10;
+    --panel:rgba(13,19,28,.82);
+    --line:rgba(120,150,180,.16);
+    --text:#cdd7e2;
+    --muted:#7a8898;
+    --gold:#ffc24d;
+    --gold-dim:rgba(255,194,77,.55);
+    --display:'Space Grotesk',system-ui,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--ink);color:var(--text);font-family:var(--display);overflow:hidden}
+  #stage{position:fixed;inset:0}
+  canvas#field{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair;touch-action:none}
+
+  /* header */
+  .head{position:absolute;top:18px;left:22px;z-index:5;pointer-events:none;max-width:60vw}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--gold-dim)}
+  .title{font-weight:600;font-size:clamp(18px,2.4vw,28px);letter-spacing:-.01em;margin-top:6px;text-shadow:0 2px 18px rgba(0,0,0,.7)}
+  .subtitle{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:4px;max-width:42ch;line-height:1.45}
+
+  /* control panel */
+  .panel{
+    position:absolute;top:18px;right:18px;z-index:6;width:268px;
+    background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--line);border-radius:14px;padding:16px 16px 14px;
+    box-shadow:0 12px 40px rgba(0,0,0,.5);
+  }
+  .panel h2{font-family:var(--mono);font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
+  .row{margin:13px 0}
+  .row label{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:7px}
+  .row label b{color:var(--gold);font-weight:500}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:3px;background:rgba(120,150,180,.25);outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--gold);cursor:pointer;box-shadow:0 0 0 4px rgba(255,194,77,.12)}
+  input[type=range]::-moz-range-thumb{width:14px;height:14px;border:none;border-radius:50%;background:var(--gold);cursor:pointer;box-shadow:0 0 0 4px rgba(255,194,77,.12)}
+  input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 5px rgba(255,194,77,.3)}
+
+  .btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+  button{font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;color:var(--text);background:rgba(120,150,180,.08);
+    border:1px solid var(--line);border-radius:9px;padding:9px 6px;cursor:pointer;transition:.15s}
+  button:hover{background:rgba(120,150,180,.16);border-color:rgba(120,150,180,.3)}
+  button:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+  button.on{background:rgba(255,194,77,.14);border-color:var(--gold-dim);color:var(--gold)}
+
+  .readout{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:14px;padding-top:12px;border-top:1px solid var(--line);line-height:1.8}
+  .readout span{color:var(--text)}
+  .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--gold);margin-right:6px;vertical-align:middle}
+
+  /* footer hint */
+  .hint{position:absolute;left:22px;bottom:18px;z-index:5;font-family:var(--mono);font-size:11px;color:var(--muted);
+    background:rgba(7,10,16,.5);padding:8px 12px;border-radius:9px;border:1px solid var(--line);backdrop-filter:blur(6px);line-height:1.7}
+  .hint b{color:var(--gold-dim);font-weight:500}
+
+  @media(max-width:760px){
+    .head{max-width:90vw}
+    .subtitle{display:none}
+    .panel{top:auto;bottom:14px;right:14px;left:14px;width:auto}
+    .hint{display:none}
+  }
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="field"></canvas>
+
+  <div class="head">
+    <div class="eyebrow">Computational Curvature · 3.2</div>
+    <div class="title">Information Geometry</div>
+    <div class="subtitle">∇²Φ = α·I(x),&nbsp; I = A·ρ + B·|∇ρ|² &nbsp;·&nbsp; campo a contorno fisso (Dirichlet)</div>
+  </div>
+
+  <div class="panel">
+    <h2><span>Parametri</span></h2>
+    <div class="row">
+      <label>A &nbsp;<span class="m">·&nbsp;peso ρ</span><b id="vA">1.00</b></label>
+      <input id="sA" type="range" min="0" max="3" step="0.01" value="1">
+    </div>
+    <div class="row">
+      <label>B &nbsp;<span class="m">·&nbsp;peso |∇ρ|²</span><b id="vB">0.50</b></label>
+      <input id="sB" type="range" min="0" max="3" step="0.01" value="0.5">
+    </div>
+    <div class="row">
+      <label>α &nbsp;<span class="m">·&nbsp;accoppiamento</span><b id="vL">1.00</b></label>
+      <input id="sL" type="range" min="0" max="3" step="0.01" value="1">
+    </div>
+
+    <div class="btns">
+      <button id="bGeo">Geodetiche</button>
+      <button id="bAdd">+ sorgente</button>
+      <button id="bDel">− sorgente</button>
+      <button id="bReset">Reset</button>
+    </div>
+
+    <div class="readout">
+      <div><span class="dot"></span>sorgenti <span id="rN">3</span></div>
+      <div>h00 max <span id="rMax">—</span></div>
+      <div>residuo <span id="rRes">—</span></div>
+    </div>
+  </div>
+
+  <div class="hint">
+    <b>trascina</b> una massa · <b>tasto destro</b> aggiunge · <b>doppio click</b> rimuove
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ===== dominio / griglia =====
+const NX = 220, NY = 110;
+const XMIN=-10, XMAX=10, YMIN=-5, YMAX=5;
+const dx=(XMAX-XMIN)/(NX-1), dy=(YMAX-YMIN)/(NY-1);
+const idx=(i,j)=>j*NX+i;
+
+let A=1.0, B=0.5, ALPHA=1.0;
+
+const DEF=[
+  {x:3.0,y:0.5,amp:1.0,sigma:0.6},
+  {x:-2.0,y:-1.0,amp:0.6,sigma:1.2},
+  {x:0.5,y:2.0,amp:0.4,sigma:0.8},
+];
+let sources = DEF.map(s=>({...s}));
+
+const rho = new Float32Array(NX*NY);
+const f   = new Float32Array(NX*NY);   // RHS = alpha*I
+const Phi = new Float32Array(NX*NY);   // warm-started
+const h00 = new Float32Array(NX*NY);
+
+let clim={lo:-1,hi:1};
+let converged=false, geoOn=false, geodesics=[];
+
+// ===== campi =====
+function buildSource(){
+  rho.fill(0);
+  for(const s of sources){
+    const inv=1/(s.sigma*s.sigma);
+    for(let j=0;j<NY;j++){
+      const y=YMIN+j*dy, dyv=y-s.y;
+      for(let i=0;i<NX;i++){
+        const x=XMIN+i*dx, dxv=x-s.x;
+        rho[idx(i,j)] += s.amp*Math.exp(-(dxv*dxv+dyv*dyv)*inv);
+      }
+    }
+  }
+}
+
+function buildRHS(){
+  // I = A*rho + B*|grad rho|^2 ;  f = alpha*I
+  for(let j=0;j<NY;j++){
+    for(let i=0;i<NX;i++){
+      const ip=Math.min(i+1,NX-1), im=Math.max(i-1,0);
+      const jp=Math.min(j+1,NY-1), jm=Math.max(j-1,0);
+      const gx=(rho[idx(ip,j)]-rho[idx(im,j)])/(2*dx);
+      const gy=(rho[idx(i,jp)]-rho[idx(i,jm)])/(2*dy);
+      const I=A*rho[idx(i,j)]+B*(gx*gx+gy*gy);
+      f[idx(i,j)]=ALPHA*I;
+    }
+  }
+}
+
+// SOR red-black, Dirichlet Phi=0 al bordo
+const cx=1/(dx*dx), cy=1/(dy*dy), cc=2*(cx+cy), OMEGA=1.85;
+function sorSweep(){
+  for(let color=0;color<2;color++){
+    for(let j=1;j<NY-1;j++){
+      for(let i=1+((j+color)&1);i<NX-1;i+=2){
+        const k=idx(i,j);
+        const nv=((Phi[k+1]+Phi[k-1])*cx+(Phi[k+NX]+Phi[k-NX])*cy-f[k])/cc;
+        Phi[k]+=OMEGA*(nv-Phi[k]);
+      }
+    }
+  }
+}
+function residual(){
+  let r=0;
+  for(let j=1;j<NY-1;j++)for(let i=1;i<NX-1;i+=3){
+    const k=idx(i,j);
+    const lap=(Phi[k+1]-2*Phi[k]+Phi[k-1])*cx+(Phi[k+NX]-2*Phi[k]+Phi[k-NX])*cy;
+    const e=Math.abs(lap-f[k]); if(e>r)r=e;
+  }
+  return r;
+}
+function makeH00(){
+  let lo=Infinity,hi=-Infinity;
+  for(let k=0;k<h00.length;k++){const v=-2*Phi[k];h00[k]=v;if(v<lo)lo=v;if(v>hi)hi=v;}
+  clim.lo=lo;clim.hi=hi;
+}
+
+// ===== geodetiche: a = -grad Phi (interp bilineare) =====
+function force(x,y){
+  let fi=(x-XMIN)/dx, fj=(y-YMIN)/dy;
+  if(fi<1||fi>NX-2||fj<1||fj>NY-2)return[0,0];
+  const i=fi|0,j=fj|0, tx=fi-i,ty=fj-j;
+  const gAt=(ii,jj)=>{
+    const gx=(Phi[idx(ii+1,jj)]-Phi[idx(ii-1,jj)])/(2*dx);
+    const gy=(Phi[idx(ii,jj+1)]-Phi[idx(ii,jj-1)])/(2*dy);
+    return[-gx,-gy];
+  };
+  const a=gAt(i,j),b=gAt(i+1,j),c=gAt(i,j+1),d=gAt(i+1,j+1);
+  const lx=(p,q)=>p*(1-tx)+q*tx;
+  return[ lx(a[0],b[0])*(1-ty)+lx(c[0],d[0])*ty,
+          lx(a[1],b[1])*(1-ty)+lx(c[1],d[1])*ty ];
+}
+function integrateGeodesics(){
+  geodesics=[];
+  if(!geoOn)return;
+  const launch=[-2.6,-1.0,0.6,2.2].map(y0=>[-9.0,y0,0.6,0.0]);
+  const dt=0.05, steps=900;
+  for(let st of launch){
+    let[x,y,vx,vy]=st; const path=[[x,y]];
+    for(let n=0;n<steps;n++){
+      // RK4 su (x,y,vx,vy)
+      const k1=force(x,y);
+      const k2=force(x+0.5*dt*vx, y+0.5*dt*vy);
+      const k3=force(x+0.5*dt*(vx+0.5*dt*k1[0]), y+0.5*dt*(vy+0.5*dt*k1[1]));
+      const k4=force(x+dt*(vx+0.5*dt*k2[0]),     y+dt*(vy+0.5*dt*k2[1]));
+      x+=dt*(vx+dt*(k1[0]+k2[0]+k3[0])/6);
+      y+=dt*(vy+dt*(k1[1]+k2[1]+k3[1])/6);
+      vx+=dt*(k1[0]+2*k2[0]+2*k3[0]+k4[0])/6;
+      vy+=dt*(k1[1]+2*k2[1]+2*k3[1]+k4[1])/6;
+      if(x<XMIN||x>XMAX||y<YMIN||y>YMAX)break;
+      path.push([x,y]);
+    }
+    geodesics.push(path);
+  }
+}
+
+// ===== colormap (inferno-like) =====
+const STOPS=[[0,0,4],[22,11,57],[62,9,102],[101,21,110],[140,41,107],[181,54,93],
+            [217,72,76],[242,107,53],[252,151,40],[248,202,73],[252,255,164]];
+function lut(t){
+  t=Math.max(0,Math.min(1,t)); const f=t*(STOPS.length-1), i=Math.min(f|0,STOPS.length-2), u=f-i;
+  const a=STOPS[i],b=STOPS[i+1];
+  return[a[0]+(b[0]-a[0])*u, a[1]+(b[1]-a[1])*u, a[2]+(b[2]-a[2])*u];
+}
+
+// ===== render =====
+const cv=document.getElementById('field'), ctx=cv.getContext('2d');
+const off=document.createElement('canvas'); off.width=NX; off.height=NY;
+const octx=off.getContext('2d'); const img=octx.createImageData(NX,NY);
+let W=0,H=0,dpr=1;
+
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  W=cv.clientWidth; H=cv.clientHeight;
+  cv.width=W*dpr; cv.height=H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  needRedraw=true;
+}
+window.addEventListener('resize',resize);
+
+const sx=x=>(x-XMIN)/(XMAX-XMIN)*W;
+const sy=y=>(1-(y-YMIN)/(YMAX-YMIN))*H;
+
+function paintField(){
+  const span=(clim.hi-clim.lo)||1, d=img.data;
+  for(let j=0;j<NY;j++)for(let i=0;i<NX;i++){
+    const t=(h00[idx(i,j)]-clim.lo)/span;
+    const c=lut(t); const p=((NY-1-j)*NX+i)*4;   // flip y -> origin in basso
+    d[p]=c[0];d[p+1]=c[1];d[p+2]=c[2];d[p+3]=255;
+  }
+  octx.putImageData(img,0,0);
+}
+
+function draw(){
+  ctx.imageSmoothingEnabled=true;
+  ctx.clearRect(0,0,W,H);
+  ctx.drawImage(off,0,0,NX,NY,0,0,W,H);
+
+  // geodetiche
+  if(geoOn){
+    ctx.lineWidth=1.4; ctx.strokeStyle='rgba(255,210,120,.9)';
+    ctx.shadowColor='rgba(255,194,77,.6)'; ctx.shadowBlur=6;
+    for(const p of geodesics){
+      ctx.beginPath(); ctx.moveTo(sx(p[0][0]),sy(p[0][1]));
+      for(let n=1;n<p.length;n++)ctx.lineTo(sx(p[n][0]),sy(p[n][1]));
+      ctx.stroke();
+    }
+    ctx.shadowBlur=0;
+  }
+  // sorgenti
+  for(const s of sources){
+    const px=sx(s.x),py=sy(s.y), r=6+5*s.amp;
+    ctx.beginPath(); ctx.arc(px,py,r,0,7); ctx.strokeStyle='rgba(255,194,77,.9)';
+    ctx.lineWidth=1.5; ctx.stroke();
+    ctx.beginPath(); ctx.arc(px,py,2.4,0,7); ctx.fillStyle='#ffc24d'; ctx.fill();
+  }
+}
+
+// ===== loop =====
+let needRedraw=true;
+function recomputeStatic(){ buildSource(); buildRHS(); converged=false; }
+function settle(){
+  makeH00(); paintField();
+  document.getElementById('rMax').textContent=clim.hi.toFixed(2);
+  document.getElementById('rRes').textContent=residual().toExponential(1);
+  if(geoOn)integrateGeodesics();
+  needRedraw=true;
+}
+
+function frame(){
+  if(!converged){
+    for(let s=0;s<8;s++)sorSweep();
+    makeH00(); paintField();
+    if(residual()<2e-4){ converged=true; settle(); }
+    needRedraw=true;
+  }
+  if(needRedraw){ draw(); needRedraw=false; }
+  requestAnimationFrame(frame);
+}
+
+// ===== interazione =====
+let dragI=-1;
+function toData(ev){
+  const r=cv.getBoundingClientRect();
+  return[ XMIN+(ev.clientX-r.left)/r.width*(XMAX-XMIN),
+          YMIN+(1-(ev.clientY-r.top)/r.height)*(YMAX-YMIN) ];
+}
+function nearest(x,y){
+  let bi=-1,bd=1e9;
+  sources.forEach((s,i)=>{const d=Math.hypot(x-s.x,y-s.y);if(d<bd){bd=d;bi=i;}});
+  return[bi,bd];
+}
+cv.addEventListener('pointerdown',ev=>{
+  const[x,y]=toData(ev);
+  if(ev.button===2){ addSource(x,y); return; }
+  const[i,d]=nearest(x,y);
+  if(d<0.7){ dragI=i; cv.setPointerCapture(ev.pointerId); }
+});
+cv.addEventListener('pointermove',ev=>{
+  if(dragI<0)return;
+  const[x,y]=toData(ev);
+  sources[dragI].x=Math.max(XMIN+0.3,Math.min(XMAX-0.3,x));
+  sources[dragI].y=Math.max(YMIN+0.3,Math.min(YMAX-0.3,y));
+  recomputeStatic(); needRedraw=true;
+});
+cv.addEventListener('pointerup',()=>{ if(dragI>=0){dragI=-1;converged=false;} });
+cv.addEventListener('contextmenu',ev=>ev.preventDefault());
+cv.addEventListener('dblclick',ev=>{
+  const[x,y]=toData(ev); const[i,d]=nearest(x,y);
+  if(d<0.7&&sources.length>1){ sources.splice(i,1); refreshN(); recomputeStatic(); }
+});
+
+function addSource(x,y){ sources.push({x,y,amp:0.8,sigma:0.8}); refreshN(); recomputeStatic(); }
+function refreshN(){ document.getElementById('rN').textContent=sources.length; }
+
+// ===== controlli =====
+const sA=document.getElementById('sA'),sB=document.getElementById('sB'),sL=document.getElementById('sL');
+const vA=document.getElementById('vA'),vB=document.getElementById('vB'),vL=document.getElementById('vL');
+sA.oninput=()=>{A=+sA.value;vA.textContent=A.toFixed(2);converged=false;};
+sB.oninput=()=>{B=+sB.value;vB.textContent=B.toFixed(2);converged=false;};
+sL.oninput=()=>{ALPHA=+sL.value;vL.textContent=ALPHA.toFixed(2);recomputeStatic();};
+
+document.getElementById('bGeo').onclick=e=>{
+  geoOn=!geoOn; e.target.classList.toggle('on',geoOn);
+  integrateGeodesics(); needRedraw=true;
+};
+document.getElementById('bAdd').onclick=()=>addSource(0,0);
+document.getElementById('bDel').onclick=()=>{ if(sources.length>1){sources.pop();refreshN();recomputeStatic();} };
+document.getElementById('bReset').onclick=()=>{
+  sources=DEF.map(s=>({...s})); A=1;B=0.5;ALPHA=1;
+  sA.value=1;sB.value=0.5;sL.value=1; vA.textContent='1.00';vB.textContent='0.50';vL.textContent='1.00';
+  refreshN(); Phi.fill(0); recomputeStatic();
+};
+
+// ===== start =====
+resize(); recomputeStatic(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>
